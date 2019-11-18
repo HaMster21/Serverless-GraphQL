@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using HotChocolate.Execution;
 using Microsoft.AspNetCore.Http;
@@ -5,9 +8,16 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 
 namespace ServerlessGraphQL
 {
+    internal class GraphQLRequest
+    {
+        public string Query { get; set; }
+        public Dictionary<string, object> Variables { get; set; }
+    }
+
     public class GraphQL
     {
         private readonly IQueryExecutor Executor;
@@ -23,7 +33,20 @@ namespace ServerlessGraphQL
         {
             log.LogInformation("GraphQL-Endpoint triggered");
 
-            return new OkResult();
+            var graphql = JsonConvert.DeserializeObject<GraphQLRequest>(await req.ReadAsStringAsync());
+
+            var result = await Executor.ExecuteAsync(reqBuilder =>
+            {
+                reqBuilder.SetQuery(graphql.Query);
+                reqBuilder.SetVariableValues(graphql.Variables);
+            });
+
+            if (result.Errors.Any())
+            {
+                throw new AggregateException("GraphQL operation failed", result.Errors.Select(error => error.Exception));
+            }
+
+            return new OkObjectResult(result);
         }
     }
 }
